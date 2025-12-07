@@ -1,0 +1,108 @@
+# Automated Tracking Update & Alerts Scheduler
+
+name: Scheduled Tracking Update
+
+on:
+  schedule:
+    # Run every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-tracking:
+    name: Update Tracking Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tracking update
+        id: update
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERCEL_URL: ${{ secrets.VERCEL_URL }}
+          FEDEX_API_KEY: ${{ secrets.FEDEX_API_KEY }}
+          FEDEX_API_SECRET: ${{ secrets.FEDEX_API_SECRET }}
+          DHL_API_KEY: ${{ secrets.DHL_API_KEY }}
+        run: node scripts/run-update.js
+
+      - name: Upload update logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: update-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 7
+
+  send-alerts:
+    name: Send WhatsApp Alerts
+    needs: update-tracking
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install chromium --with-deps
+
+      - name: Download WhatsApp session
+        uses: actions/download-artifact@v3
+        with:
+          name: whatsapp-session
+          path: .whatsapp/
+        continue-on-error: true
+
+      - name: Send WhatsApp alerts
+        id: alerts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WA_RATE_LIMIT_PER_MIN: ${{ secrets.WA_RATE_LIMIT_PER_MIN || '20' }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+        run: node scripts/wa-send.js
+
+      - name: Upload WhatsApp session
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: whatsapp-session
+          path: .whatsapp/session.json
+          retention-days: 30
+
+      - name: Upload alert logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: alert-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 7
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Alert job failed - check logs"
+          # Add email notification here if needed

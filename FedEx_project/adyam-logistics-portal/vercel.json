@@ -1,0 +1,17 @@
+{
+    "functions": {
+        "api/**/*.ts": {
+            "memory": 1024,
+            "maxDuration": 300
+        },
+        "api/tracking/update-all/route.ts": {
+            "memory": 2048,
+            "maxDuration": 900
+        }
+    },
+    "buildCommand": "npm run build",
+    "devCommand": "npm run dev",
+    "installCommand": "npm install && npx playwright install chromium --with-deps",
+    "framework": "nextjs",
+    "outputDirectory": ".next"
+}

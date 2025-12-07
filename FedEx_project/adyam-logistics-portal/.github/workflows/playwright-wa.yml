@@ -1,0 +1,68 @@
+# Manual WhatsApp Session & Testing
+
+name: WhatsApp Playwright
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - dry-run
+          - send-test
+
+jobs:
+  playwright-whatsapp:
+    name: WhatsApp Automation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install chromium --with-deps
+
+      - name: Download WhatsApp session
+        uses: actions/download-artifact@v3
+        with:
+          name: whatsapp-session
+          path: .whatsapp/
+        continue-on-error: true
+
+      - name: Run dry-run
+        if: ${{ github.event.inputs.action == 'dry-run' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/wa-dryrun.js
+
+      - name: Run test send
+        if: ${{ github.event.inputs.action == 'send-test' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TEST_PHONE: ${{ secrets.TEST_PHONE }}
+        run: node scripts/wa-test-send.js "$TEST_PHONE" "Test from GitHub Actions"
+
+      - name: Upload session
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: whatsapp-session
+          path: .whatsapp/session.json
+          retention-days: 30
